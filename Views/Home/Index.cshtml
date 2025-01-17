@@ -1,0 +1,122 @@
+﻿@{
+    ViewData["Title"] = "Find Nearby Cafés";
+}
+<h2>Find Nearby Cafés</h2>
+<button id="locate-btn" class="btn btn-primary">Find Nearby Cafés </button>
+<div id="error-message" class="text-danger"></div>
+<table class="table mt-3" id="cafes-table" style="display:none;">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Address</th>
+            <th>Map</th>
+        </tr>
+    </thead>
+    <tbody ></tbody>
+</table>
+
+<!-- OpenStreetMap Container -->
+<div id="map" style="width: 100%; height: 400px;"></div>
+
+<!-- Load Leaflet.js -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+    let webSocket;
+
+    function connectWebSocket() {
+        webSocket = new WebSocket("wss://localhost:7053/CafeLocatorApp");
+
+        webSocket.onopen = function () {
+            console.log("WebSocket connection established.");
+            webSocket.send("Hello from client!");
+        };
+
+        webSocket.onmessage = function (event) {
+            console.log("Received from server:", event.data);
+        };
+
+        webSocket.onclose = function () {
+            console.log("WebSocket connection closed.");
+        };
+
+        webSocket.onerror = function (error) {
+            console.error("WebSocket error:", error);
+        };
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("connect-btn").addEventListener("click", connectWebSocket);
+    });
+</script>
+
+<button id="connect-btn" class="btn btn-primary">Connect to WebSocket</button>
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        let locateBtn = document.getElementById("locate-btn");
+        let map = L.map('map').setView([0, 0], 2); // Default world view
+        let markers = {}; // Store markers
+
+        // Load OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        function fetchCafes(latitude, longitude) {
+            fetch(`/Home/GetCafes?latitude=${latitude}&longitude=${longitude}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error("Network response was not ok.");
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    let table = document.getElementById("cafes-table");
+                    let tbody = table.querySelector("tbody");
+                    tbody.innerHTML = "";
+                    table.style.display = "table";
+
+                    map.setView([latitude, longitude], 15); // Move map to user location
+
+                    data.forEach((cafe, index) => {
+                        // Add row to table
+                        let row = document.createElement("tr");
+                        row.innerHTML = `<td>${cafe.name}</td><td>${cafe.address}</td>`;
+                        tbody.appendChild(row);
+
+                        // Create a marker for each café
+                        let marker = L.marker([cafe.latitude, cafe.longitude]).addTo(map)
+                            .bindPopup(`<b>${cafe.name}</b><br>${cafe.address}`);
+
+                        markers[index] = marker; // Store marker in object
+
+                        // On row click, pan to that café
+                        row.addEventListener("click", function () {
+                            map.setView([cafe.latitude, cafe.longitude], 16);
+                            marker.openPopup();
+                        });
+                    });
+                })
+                .catch(error => {
+                    document.getElementById("error-message").innerText = "Error fetching cafés. Try again later.";
+                    console.error("Error fetching cafés:", error);
+                });
+        }
+
+        locateBtn.addEventListener("click", function () {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    fetchCafes(position.coords.latitude, position.coords.longitude);
+                }, error => {
+                    document.getElementById("error-message").innerText = "Location access denied. Enter manually.";
+                    console.error("Geolocation error:", error);
+                });
+            } else {
+                document.getElementById("error-message").innerText = "Geolocation is not supported by this browser.";
+            }
+        });
+    });
+</script>
