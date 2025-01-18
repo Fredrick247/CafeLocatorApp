@@ -134,7 +134,12 @@
                 zoom: 2, // Default zoom
                 maxZoom: 18 // ✅ Ensure maxZoom is set
             });
-            let markers = L.markerClusterGroup(); // Cluster group
+            let markers = L.markerClusterGroup({
+                spiderfyOnMaxZoom: true, // ✅ Ensures clicking on a cluster zooms in fully
+                showCoverageOnHover: false, // ✅ Prevents cluster bounding box
+                zoomToBoundsOnClick: false, // ✅ Disable default cluster zoom so we can control it manually
+                maxClusterRadius: 40 // ✅ Reduce clustering radius for easier separation
+            });
             let routeMarkers = L.layerGroup().addTo(map); // ✅ Separate layer for route markers
             let routingControl; // Store routing instance
             let userLocationMarker = null; // ✅ Store user marker for updates
@@ -159,6 +164,8 @@
 
             let currentPage = 1;
             let pageSize = 10;
+            let cafeMarkers = {}; // ✅ Store markers by index for quick access
+
 
             function fetchCafes(latitude, longitude, page = 1) {
                 userLocation = [latitude, longitude];
@@ -215,12 +222,24 @@
 
 
                             markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
+                            cafeMarkers[index] = marker; // ✅ Store marker reference
 
-                            // Add event listener to pan to café on table row click
+                            // ✅ Clicking the name in the table will zoom directly to the marker and open popup
                             row.querySelector(".cafe-name").addEventListener("click", function (event) {
-                                event.preventDefault(); // Prevent default link behavior
-                                map.setView(marker.getLatLng(), 16);
-                                marker.openPopup();
+                                event.preventDefault();
+                                let cafeMarker = cafeMarkers[index];
+
+                                if (cafeMarker) {
+                                    if (markers.hasLayer(cafeMarker)) {
+                                        markers.zoomToShowLayer(cafeMarker, () => {
+                                            map.setView(cafeMarker.getLatLng(), 18);
+                                            cafeMarker.openPopup();
+                                        });
+                                    } else {
+                                        map.setView(cafeMarker.getLatLng(), 18);
+                                        cafeMarker.openPopup();
+                                    }
+                                }
                             });
                         });
                         document.getElementById("page-info").innerText = `Page ${page}`;
