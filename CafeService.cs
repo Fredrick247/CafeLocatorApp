@@ -9,7 +9,7 @@ namespace CafeLocatorApp
         private static readonly string nominatimBaseUrl = "https://nominatim.openstreetmap.org/reverse?format=json";
 
 
-        public static async Task <List<Cafe>> FindNearbyCafeAsync(double latitude,double longitude, int radius = 10000)
+        public static async Task <List<Cafe>> FindNearbyCafeAsync(double latitude,double longitude, int radius = 5000)
         {
             List<Cafe> cafes = new List<Cafe>();
 
@@ -64,7 +64,7 @@ namespace CafeLocatorApp
                             cafes.Add(new Cafe
                             {
                                 Name = name,
-                                Address = $"{street}, {city} {postcode}",
+                                Address = $"{street}, {city}, {postcode}",
                                 Latitude = lat,
                                 Longitude = lon
                             });

@@ -1,6 +1,35 @@
 ﻿@{
     ViewData["Title"] = "Find Nearby Cafés";
 }
+<head>
+    <style>
+        .cafe-name {
+            cursor: pointer; /* Changes cursor to pointer */
+            text-decoration: underline; /* Makes it look clickable */
+            color: blue; /* Optional: Makes it look like a link */
+            display: inline-block; /* Ensures it acts as a clickable element */
+                     }
+
+
+        table {
+
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid black;
+        }
+
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+
 <h2>Find Nearby Cafés</h2>
 <button id="locate-btn" class="btn btn-primary">Find Nearby Cafés </button>
 <div id="error-message" class="text-danger"></div>
@@ -9,27 +38,22 @@
         <tr>
             <th>Name</th>
             <th>Address</th>
-            <th>Map</th>
         </tr>
     </thead>
     <tbody ></tbody>
 </table>
 
-<!-- OpenStreetMap Container -->
-<div id="map" style="width: 100%; height: 400px;"></div>
-
-<!-- Load Leaflet.js -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+<!-- Websocket -->
 <script>
     let webSocket;
+    let reconnectAttempts = 0;
 
     function connectWebSocket() {
         webSocket = new WebSocket("wss://localhost:7053/CafeLocatorApp");
 
         webSocket.onopen = function () {
             console.log("WebSocket connection established.");
+            reconnectAttempts = 0; // Reset attempts on successful connection
             webSocket.send("Hello from client!");
         };
 
@@ -38,7 +62,10 @@
         };
 
         webSocket.onclose = function () {
-            console.log("WebSocket connection closed.");
+            let delay = Math.min(3000 * (2 ** reconnectAttempts), 30000); // Exponential backoff (max 30s)
+            console.log(`WebSocket closed. Reconnecting in ${delay / 1000} seconds...`);
+            setTimeout(connectWebSocket, delay);
+            reconnectAttempts++;
         };
 
         webSocket.onerror = function (error) {
@@ -46,27 +73,54 @@
         };
     }
 
-    document.addEventListener("DOMContentLoaded", function () {
-        document.getElementById("connect-btn").addEventListener("click", connectWebSocket);
-    });
+    document.addEventListener("DOMContentLoaded", connectWebSocket);
+
 </script>
 
-<button id="connect-btn" class="btn btn-primary">Connect to WebSocket</button>
+<!-- OpenStreetMap Container -->
+<div id="map" style="width: 100%; height: 400px;"></div>
 
+<!-- Load Leaflet.js FIRST -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+
+<!-- Load MarkerCluster AFTER Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+
+
+<label for="radius">Search Radius (meters):</label>
+<input type="number" id="radius" value="5000" min="1000" max="25000" step="1000" class="form-control">
+<div id="loading" style="display: none;">
+    <p>Loading cafes...</p>
+</div>
 
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         let locateBtn = document.getElementById("locate-btn");
-        let map = L.map('map').setView([0, 0], 2); // Default world view
-        let markers = {}; // Store markers
+        let map = L.map('map', {
+            center: [0, 0], // Default center
+            zoom: 2, // Default zoom
+            maxZoom: 18 // ✅ Ensure maxZoom is set
+        });
+        let markers = L.markerClusterGroup(); // Cluster group
+        map.addLayer(markers);
 
         // Load OpenStreetMap tiles
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 18 // ✅ Set max zoom level to 18
         }).addTo(map);
 
         function fetchCafes(latitude, longitude) {
-            fetch(`/Home/GetCafes?latitude=${latitude}&longitude=${longitude}`)
+            let radius = document.getElementById("radius").value || 5000; // Default 5 km
+
+            document.getElementById("loading").style.display = "block"; // Show loading spinner
+
+            fetch(`/api/Home/GetCafes?latitude=${latitude}&longitude=${longitude}&radius=${radius}`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error("Network response was not ok.");
@@ -74,6 +128,8 @@
                     return response.json();
                 })
                 .then(data => {
+                    document.getElementById("loading").style.display = "none"; // Hide loading spinner
+
                     let table = document.getElementById("cafes-table");
                     let tbody = table.querySelector("tbody");
                     tbody.innerHTML = "";
@@ -81,29 +137,40 @@
 
                     map.setView([latitude, longitude], 15); // Move map to user location
 
+                    markers.clearLayers(); // ✅ Clear previous markers before adding new ones
+
                     data.forEach((cafe, index) => {
                         // Add row to table
                         let row = document.createElement("tr");
-                        row.innerHTML = `<td>${cafe.name}</td><td>${cafe.address}</td>`;
+                        row.innerHTML = `
+                            <td><a href="#" class="cafe-name" data-index="${index}" style="cursor: pointer; text-decoration: underline;">${cafe.name}</a></td>
+                            <td>${cafe.address}</td>
+                        `;
                         tbody.appendChild(row);
 
                         // Create a marker for each café
-                        let marker = L.marker([cafe.latitude, cafe.longitude]).addTo(map)
+                        let marker = L.marker([cafe.latitude, cafe.longitude])
                             .bindPopup(`<b>${cafe.name}</b><br>${cafe.address}`);
 
-                        markers[index] = marker; // Store marker in object
+                        markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
 
-                        // On row click, pan to that café
-                        row.addEventListener("click", function () {
-                            map.setView([cafe.latitude, cafe.longitude], 16);
+                        // Add event listener to pan to café on table row click
+                        row.querySelector(".cafe-name").addEventListener("click", function (event) {
+                            event.preventDefault(); // Prevent default link behavior
+                            map.setView(marker.getLatLng(), 16);
                             marker.openPopup();
                         });
                     });
+
+                    map.addLayer(markers); // ✅ Ensure cluster group is added to the map
+                    console.log("Cafés Found:", data.length);
                 })
                 .catch(error => {
                     document.getElementById("error-message").innerText = "Error fetching cafés. Try again later.";
                     console.error("Error fetching cafés:", error);
+                    document.getElementById("loading").style.display = "none"; // Hide on error
                 });
+        
         }
 
         locateBtn.addEventListener("click", function () {

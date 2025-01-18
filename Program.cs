@@ -1,4 +1,4 @@
-var builder = WebApplication.CreateBuilder(args);
+﻿var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
@@ -30,7 +30,16 @@ app.UseRouting();
 app.UseAuthorization();
 app.UseEndpoints(endpoints =>
 {
+    // ✅ Redirects root `/` to `/api/Home`
+    endpoints.MapGet("/", async context =>
+    {
+        context.Response.Redirect("/api/Home");
+    });
+
+    // ✅ Maps API controllers (e.g., /api/Home/GetCafes)
     endpoints.MapControllers();
+
+    // ✅ WebSocket handling for "/CafeLocatorApp"
     endpoints.Map("/CafeLocatorApp", async context =>
     {
         if (context.WebSockets.IsWebSocketRequest)

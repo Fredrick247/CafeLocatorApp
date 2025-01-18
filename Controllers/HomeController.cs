@@ -1,16 +1,19 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using CafeLocatorApp.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace CafeLocatorApp.Controllers;
-
+[Route("api/[controller]")] 
+[ApiController]
 public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
-
-    public HomeController(ILogger<HomeController> logger)
+    private readonly IMemoryCache _cache;
+    public HomeController(ILogger<HomeController> logger, IMemoryCache cache)
     {
         _logger = logger;
+        _cache = cache;
     }
 
     public IActionResult Index()
@@ -18,17 +21,16 @@ public class HomeController : Controller
         return View();
     }
 
-    [HttpGet] // Ensure it's GET
-    public async Task<IActionResult> GetCafes(double latitude, double longitude)
+    [HttpGet("GetCafes")] // ✅ Ensures API endpoint is properly mapped
+    public async Task<IActionResult> GetCafes(double latitude, double longitude, int radius = 5000)
     {
-        try
+        string cacheKey = $"cafes-{latitude}-{longitude}-{radius}";
+
+        if (!_cache.TryGetValue(cacheKey, out List<Cafe> cafes))
         {
-            List<Cafe> cafes = await CafeService.FindNearbyCafeAsync(latitude, longitude);
-            return Json(cafes);
+            cafes = await CafeService.FindNearbyCafeAsync(latitude, longitude, radius);
+            _cache.Set(cacheKey, cafes, TimeSpan.FromMinutes(10)); // Cache for 10 mins
         }
-        catch (System.Exception ex)
-        {
-            return StatusCode(500, $"Error: {ex.Message}");
-        }
+        return Ok(cafes);
     }
 }
