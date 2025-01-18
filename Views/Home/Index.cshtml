@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+
     <style>
         .cafe-name {
             cursor: pointer; /* Changes cursor to pointer */
@@ -120,6 +122,8 @@
     <!-- Load Leaflet.js & MarkerCluster -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
 
     <!-- JavaScript Code -->
     <script>
@@ -131,6 +135,8 @@
                 maxZoom: 18 // ✅ Ensure maxZoom is set
             });
             let markers = L.markerClusterGroup(); // Cluster group
+            let routingControl; // Store routing instance
+            let userLocation = null;
             map.addLayer(markers);
 
             // Load OpenStreetMap tiles
@@ -143,6 +149,7 @@
             let pageSize = 10;
 
             function fetchCafes(latitude, longitude, page = 1) {
+                userLocation = [latitude, longitude];
                 let radius = document.getElementById("radius").value || 5000; // Default 5 km
                 let onlyOpen = document.getElementById("filter-open")?.checked || false; // ✅ Ensure 'onlyOpen' is defined
 
@@ -175,9 +182,13 @@
                             `;
                             tbody.appendChild(row);
 
-                            // Create a marker for each café
+                            // ✅ Create a marker for each café with "Get Directions" label
                             let marker = L.marker([cafe.latitude, cafe.longitude])
-                                .bindPopup(`<b>${cafe.name}</b><br>${cafe.address}`);
+                                .bindPopup(`
+                                        <b>${cafe.name}</b><br>${cafe.address}<br>
+                                        <label class="directions-label" data-lat="${cafe.latitude}" data-lon="${cafe.longitude}"
+                                        style="color:blue; cursor:pointer; text-decoration:underline;">Get Directions</label>
+                                    `);
 
                             markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
 
@@ -203,6 +214,7 @@
                         document.getElementById("loading").style.display = "none"; // Hide on error
                     });
             }
+            // Get user location and fetch cafés
             document.getElementById("locate-btn").addEventListener("click", function () {
                 navigator.geolocation.getCurrentPosition(position => {
                     currentPage = 1; // ✅ Reset page number
@@ -212,9 +224,30 @@
                 });
             });
 
+            // Handle pagination
             document.getElementById("prev-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage - 1));
             document.getElementById("next-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage + 1));
+            // **Route Button Click Event**
+            document.addEventListener("click", function (event) {
+                if (event.target.classList.contains("directions-label")) {
+                    let lat = parseFloat(event.target.getAttribute("data-lat"));
+                    let lon = parseFloat(event.target.getAttribute("data-lon"));
 
+                    if (userLocation) {
+                        if (routingControl) map.removeControl(routingControl);
+
+                        routingControl = L.Routing.control({
+                            waypoints: [
+                                L.latLng(userLocation[0], userLocation[1]), // User's location
+                                L.latLng(lat, lon) // Café location
+                            ],
+                            routeWhileDragging: true
+                        }).addTo(map);
+                    } else {
+                        alert("Please allow location access first.");
+                    }
+                }
+            });       
         });
     </script>
 </body>
