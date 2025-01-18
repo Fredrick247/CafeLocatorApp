@@ -135,10 +135,21 @@
                 maxZoom: 18 // ✅ Ensure maxZoom is set
             });
             let markers = L.markerClusterGroup(); // Cluster group
+            let routeMarkers = L.layerGroup().addTo(map); // ✅ Separate layer for route markers
             let routingControl; // Store routing instance
             let userLocation = null;
             map.addLayer(markers);
 
+            // ✅ Custom icons for user and destination
+            let userIcon = L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/64/64113.png', // Example user icon
+                iconSize: [32, 32]
+            });
+
+            let destinationIcon = L.icon({
+                iconUrl: 'https://cdn-icons-png.flaticon.com/512/2838/2838912.png', // Example café icon
+                iconSize: [32, 32]
+            });
             // Load OpenStreetMap tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -181,6 +192,12 @@
                                 <td>${cafe.address}</td>
                             `;
                             tbody.appendChild(row);
+
+                            // ✅ Add user location marker
+                            L.marker(userLocation, { icon: userIcon })
+                            .bindPopup("<b>You are here</b>")
+                            .addTo(routeMarkers); // ✅ Add to routeMarkers layer, NOT clustering
+
 
                             // ✅ Create a marker for each café with "Get Directions" label
                             let marker = L.marker([cafe.latitude, cafe.longitude])
@@ -234,12 +251,20 @@
                     let lon = parseFloat(event.target.getAttribute("data-lon"));
 
                     if (userLocation) {
-                        if (routingControl) map.removeControl(routingControl);
+                        if (routingControl) {
+                            map.removeControl(routingControl); // ✅ Remove existing route
+                            routeMarkers.clearLayers(); // ✅ Remove old markers
+                        }
+
+                        // ✅ Add destination marker
+                        L.marker([lat, lon], { icon: destinationIcon })
+                            .bindPopup("<b>Destination</b>")
+                            .addTo(routeMarkers); // ✅ Separate from clustering
 
                         routingControl = L.Routing.control({
                             waypoints: [
-                                L.latLng(userLocation[0], userLocation[1]), // User's location
-                                L.latLng(lat, lon) // Café location
+                                L.latLng(userLocation[0], userLocation[1]), // ✅ User's Location
+                                L.latLng(lat, lon) // ✅ Café Location
                             ],
                             routeWhileDragging: true
                         }).addTo(map);
