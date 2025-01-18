@@ -9,7 +9,7 @@ namespace CafeLocatorApp
         private static readonly string nominatimBaseUrl = "https://nominatim.openstreetmap.org/reverse?format=json";
 
 
-        public static async Task <List<Cafe>> FindNearbyCafeAsync(double latitude,double longitude, int radius = 5000)
+        public static async Task <List<Cafe>> FindNearbyCafeAsync(double latitude,double longitude, int radius = 5000, bool onlyOpen = false)
         {
             List<Cafe> cafes = new List<Cafe>();
 
@@ -39,9 +39,12 @@ namespace CafeLocatorApp
                         var name = element["tags"]?["name"]?.ToString();
                         var lat = element["lat"]?.ToObject<double>() ?? 0.0;
                         var lon = element["lon"]?.ToObject<double>() ?? 0.0;
+                        var openingHours = element["tags"]?["opening_hours"]?.ToString();
+                        bool isOpen = openingHours != null && openingHours.Contains("open");
 
 
-                        if (!string.IsNullOrEmpty(name))
+
+                        if (!string.IsNullOrEmpty(name) && (!onlyOpen || isOpen))
                         {
                             // Fetch accurate address details using Nominatim API
                             string nominatimUrl = $"{nominatimBaseUrl}&lat={lat}&lon={lon}";

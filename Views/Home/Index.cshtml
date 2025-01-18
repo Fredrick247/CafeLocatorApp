@@ -117,13 +117,14 @@
 
         function fetchCafes(latitude, longitude) {
             let radius = document.getElementById("radius").value || 5000; // Default 5 km
+            let onlyOpen = document.getElementById("filter-open")?.checked || false; // ✅ Ensure 'onlyOpen' is defined
 
             document.getElementById("loading").style.display = "block"; // Show loading spinner
 
-            fetch(`/api/Home/GetCafes?latitude=${latitude}&longitude=${longitude}&radius=${radius}`)
+            fetch(`/api/Home/GetCafes?latitude=${latitude}&longitude=${longitude}&radius=${radius}&onlyOpen=${onlyOpen}`)
                 .then(response => {
                     if (!response.ok) {
-                        throw new Error("Network response was not ok.");
+                        throw new Error(`HTTP error! Status: ${response.status}`);
                     }
                     return response.json();
                 })
@@ -143,9 +144,9 @@
                         // Add row to table
                         let row = document.createElement("tr");
                         row.innerHTML = `
-                            <td><a href="#" class="cafe-name" data-index="${index}" style="cursor: pointer; text-decoration: underline;">${cafe.name}</a></td>
-                            <td>${cafe.address}</td>
-                        `;
+                        <td><a href="#" class="cafe-name" data-index="${index}" style="cursor: pointer; text-decoration: underline;">${cafe.name}</a></td>
+                        <td>${cafe.address}</td>
+                    `;
                         tbody.appendChild(row);
 
                         // Create a marker for each café
@@ -163,16 +164,15 @@
                     });
 
                     map.addLayer(markers); // ✅ Ensure cluster group is added to the map
-                    console.log("Cafés Found:", data.length);
+                    console.log(`Cafés Found: ${data.length}`);
                 })
                 .catch(error => {
                     document.getElementById("error-message").innerText = "Error fetching cafés. Try again later.";
                     console.error("Error fetching cafés:", error);
                     document.getElementById("loading").style.display = "none"; // Hide on error
                 });
-        
         }
-
+               
         locateBtn.addEventListener("click", function () {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(position => {

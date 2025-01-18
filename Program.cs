@@ -1,4 +1,23 @@
-﻿var builder = WebApplication.CreateBuilder(args);
+﻿using AspNetCoreRateLimit;
+using Microsoft.Extensions.DependencyInjection;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+builder.Services.AddSingleton<IProcessingStrategy, AsyncKeyLockProcessingStrategy>();
+builder.Services.Configure<IpRateLimitOptions>(options =>
+{
+    options.GeneralRules = new List<RateLimitRule>
+    {
+        new RateLimitRule
+        {
+             Endpoint = "GET:/api/Home/GetCafes",
+            Limit = 10, // Allow 10 requests per minute
+            Period = "1m"
+        }
+    };
+});
+builder.Services.AddInMemoryRateLimiting();
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
@@ -11,6 +30,7 @@ builder.Services.AddCors(options =>
                         .AllowCredentials()); // Required for WebSockets
 });
 var app = builder.Build();
+app.UseIpRateLimiting();
 app.UseWebSockets();
 
 

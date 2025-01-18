@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using CafeLocatorApp.Models;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace CafeLocatorApp.Controllers;
 [Route("api/[controller]")] 
@@ -22,7 +23,7 @@ public class HomeController : Controller
     }
 
     [HttpGet("GetCafes")] // ✅ Ensures API endpoint is properly mapped
-    public async Task<IActionResult> GetCafes(double latitude, double longitude, int radius = 5000)
+    public async Task<IActionResult> GetCafes(double latitude, double longitude, int radius = 5000, int page = 1, int pageSize = 10)
     {
         string cacheKey = $"cafes-{latitude}-{longitude}-{radius}";
 
@@ -31,6 +32,8 @@ public class HomeController : Controller
             cafes = await CafeService.FindNearbyCafeAsync(latitude, longitude, radius);
             _cache.Set(cacheKey, cafes, TimeSpan.FromMinutes(10)); // Cache for 10 mins
         }
+        var paginatedCafes = cafes.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
         return Ok(cafes);
     }
 }
