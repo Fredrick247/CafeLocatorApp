@@ -137,17 +137,18 @@
             let markers = L.markerClusterGroup(); // Cluster group
             let routeMarkers = L.layerGroup().addTo(map); // ✅ Separate layer for route markers
             let routingControl; // Store routing instance
-            let userLocation = null;
+            let userLocationMarker = null; // ✅ Store user marker for updates
+            let destinationMarker = null; // ✅ Store destination marker
             map.addLayer(markers);
 
             // ✅ Custom icons for user and destination
             let userIcon = L.icon({
-                iconUrl: 'https://cdn-icons-png.flaticon.com/512/64/64113.png', // Example user icon
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', // ✅ Red user marker
                 iconSize: [32, 32]
             });
 
             let destinationIcon = L.icon({
-                iconUrl: 'https://cdn-icons-png.flaticon.com/512/2838/2838912.png', // Example café icon
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', // ✅ Blue destination marker
                 iconSize: [32, 32]
             });
             // Load OpenStreetMap tiles
@@ -184,6 +185,16 @@
                         map.setView([latitude, longitude], 15); // Move map to user location
                         markers.clearLayers(); // ✅ Clear previous markers before adding new ones
 
+                            // ✅ Remove previous user marker before adding a new one
+                        if (userLocationMarker) {
+                            routeMarkers.removeLayer(userLocationMarker);
+                        }
+
+                        userLocationMarker = L.marker([latitude, longitude], {
+                            icon: userIcon,
+                            draggable: false // ✅ User marker is now fixed
+                        }).bindPopup("<b>You are here</b>").addTo(routeMarkers);
+
                         data.forEach((cafe, index) => {
                             // Add row to table
                             let row = document.createElement("tr");
@@ -193,19 +204,15 @@
                             `;
                             tbody.appendChild(row);
 
-                            // ✅ Add user location marker
-                            L.marker(userLocation, { icon: userIcon })
-                            .bindPopup("<b>You are here</b>")
-                            .addTo(routeMarkers); // ✅ Add to routeMarkers layer, NOT clustering
-
-
                             // ✅ Create a marker for each café with "Get Directions" label
-                            let marker = L.marker([cafe.latitude, cafe.longitude])
-                                .bindPopup(`
-                                        <b>${cafe.name}</b><br>${cafe.address}<br>
-                                        <label class="directions-label" data-lat="${cafe.latitude}" data-lon="${cafe.longitude}"
-                                        style="color:blue; cursor:pointer; text-decoration:underline;">Get Directions</label>
-                                    `);
+                            let marker = L.marker([cafe.latitude, cafe.longitude], {
+                                draggable: false // ✅ Cafe markers are now fixed
+                            }).bindPopup(`
+                                    <b>${cafe.name}</b><br>${cafe.address}<br>
+                                    <label class="directions-label" data-lat="${cafe.latitude}" data-lon="${cafe.longitude}"
+                                    style="color:blue; cursor:pointer; text-decoration:underline;">Directions</label>
+                                `);
+
 
                             markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
 
@@ -231,43 +238,58 @@
                         document.getElementById("loading").style.display = "none"; // Hide on error
                     });
             }
-            // Get user location and fetch cafés
+            // ✅ Get user location and fetch cafés
             document.getElementById("locate-btn").addEventListener("click", function () {
-                navigator.geolocation.getCurrentPosition(position => {
-                    currentPage = 1; // ✅ Reset page number
-                    fetchCafes(position.coords.latitude, position.coords.longitude, currentPage);
+                navigator.geolocation.watchPosition(position => { // ✅ Uses `watchPosition` for live tracking
+                    let userLat = position.coords.latitude;
+                    let userLon = position.coords.longitude;
+                    currentPage = 1;
+                    fetchCafes(userLat, userLon, currentPage);
                 }, error => {
                     console.error("Geolocation error:", error);
                 });
             });
-
             // Handle pagination
             document.getElementById("prev-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage - 1));
             document.getElementById("next-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage + 1));
-            // **Route Button Click Event**
+            // ✅ Handle "Get Directions" Click for Routing & Auto-Panning to User
             document.addEventListener("click", function (event) {
                 if (event.target.classList.contains("directions-label")) {
                     let lat = parseFloat(event.target.getAttribute("data-lat"));
                     let lon = parseFloat(event.target.getAttribute("data-lon"));
 
-                    if (userLocation) {
+
+                    if (userLocationMarker) {
                         if (routingControl) {
                             map.removeControl(routingControl); // ✅ Remove existing route
                             routeMarkers.clearLayers(); // ✅ Remove old markers
                         }
 
-                        // ✅ Add destination marker
-                        L.marker([lat, lon], { icon: destinationIcon })
-                            .bindPopup("<b>Destination</b>")
-                            .addTo(routeMarkers); // ✅ Separate from clustering
+                        // ✅ Add updated user marker (if it exists, update it)
+                        routeMarkers.addLayer(userLocationMarker);
+
+                        // ✅ Add destination marker (if it exists, update it)
+                        if (destinationMarker) {
+                            destinationMarker.setLatLng([lat, lon]); // ✅ Move marker instead of creating new one
+                        } else {
+                            destinationMarker = L.marker([lat, lon], {
+                                icon: destinationIcon,
+                                draggable: false // ✅ Destination marker is now fixed
+                            }).bindPopup("<b>Destination</b>").addTo(routeMarkers);
+                        }
 
                         routingControl = L.Routing.control({
                             waypoints: [
-                                L.latLng(userLocation[0], userLocation[1]), // ✅ User's Location
+                                userLocationMarker.getLatLng(), // ✅ User's Live Location
                                 L.latLng(lat, lon) // ✅ Café Location
                             ],
-                            routeWhileDragging: true
+                            routeWhileDragging: false,
+                            createMarker: function () { return null; } // ✅ Hide extra draggable markers
+
                         }).addTo(map);
+
+                        // ✅ Auto-pan to the user's location when routing starts
+                        map.setView(userLocationMarker.getLatLng(), 14);
                     } else {
                         alert("Please allow location access first.");
                     }
