@@ -23,17 +23,23 @@ public class HomeController : Controller
     }
 
     [HttpGet("GetCafes")] // ✅ Ensures API endpoint is properly mapped
-    public async Task<IActionResult> GetCafes(double latitude, double longitude, int radius = 5000, int page = 1, int pageSize = 10)
+    public async Task<IActionResult> GetCafes(double latitude, double longitude, int radius = 5000, int page = 1, int pageSize = 10, bool onlyOpen = false)
     {
-        string cacheKey = $"cafes-{latitude}-{longitude}-{radius}";
+        string cacheKey = $"cafes-{latitude}-{longitude}-{radius}-open-{onlyOpen}-page-{page}-size-{pageSize}";
 
-        if (!_cache.TryGetValue(cacheKey, out List<Cafe> cafes))
+        // ✅ Check cache before making API calls
+        if (!_cache.TryGetValue(cacheKey, out List<Cafe> paginatedCafes))
         {
-            cafes = await CafeService.FindNearbyCafeAsync(latitude, longitude, radius);
-            _cache.Set(cacheKey, cafes, TimeSpan.FromMinutes(10)); // Cache for 10 mins
-        }
-        var paginatedCafes = cafes.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+            // ✅ Fetch cafes with onlyOpen filter
+            var cafes = await CafeService.FindNearbyCafeAsync(latitude, longitude, radius, onlyOpen, page, pageSize);
 
-        return Ok(cafes);
+            // ✅ Cache the paginated results for 10 mins
+            _cache.Set(cacheKey, cafes, TimeSpan.FromMinutes(10));
+
+            paginatedCafes = cafes;
+        }
+
+        return Ok(paginatedCafes);
     }
+
 }

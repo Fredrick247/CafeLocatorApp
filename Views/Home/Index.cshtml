@@ -2,6 +2,11 @@
     ViewData["Title"] = "Find Nearby Cafés";
 }
 <head>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         .cafe-name {
             cursor: pointer; /* Changes cursor to pointer */
@@ -9,8 +14,6 @@
             color: blue; /* Optional: Makes it look like a link */
             display: inline-block; /* Ensures it acts as a clickable element */
                      }
-
-
         table {
 
             width: 100%;
@@ -27,12 +30,75 @@
         th {
             background-color: #f2f2f2;
         }
+
+        #loading {
+            display: none;
+            font-weight: bold;
+            color: red;
+        }
+
+        .pagination-buttons {
+            margin-top: 15px;
+        }
     </style>
 </head>
+<body>
+    <script>
+        let webSocket;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5; // Prevent infinite reconnect loop
+
+        function connectWebSocket() {
+            console.log("Attempting WebSocket connection...");
+            webSocket = new WebSocket("wss://localhost:7053/CafeLocatorApp");
+
+            webSocket.onopen = function () {
+                console.log("WebSocket connection established.");
+                reconnectAttempts = 0; // Reset attempts on successful connection
+                webSocket.send("Hello from client!");
+            };
+
+            webSocket.onmessage = function (event) {
+                console.log("Received from server:", event.data);
+            };
+
+            webSocket.onclose = function () {
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    let delay = Math.min(3000 * (2 ** reconnectAttempts), 30000); // Exponential backoff (max 30s)
+                    console.warn(`⚠️ WebSocket closed. Reconnecting in ${delay / 1000} seconds...`);
+                    setTimeout(connectWebSocket, delay);
+                    reconnectAttempts++;
+                } else {
+                    console.error("❌ Max WebSocket reconnect attempts reached.");
+                }
+            };
+            webSocket.onerror = function (error) {
+                console.error("WebSocket error:", error);
+            };
+        }
+
+        document.addEventListener("DOMContentLoaded", connectWebSocket);
+
+    </script>
 
 <h2>Find Nearby Cafés</h2>
+    <div class="form-group">
+        <label for="radius">Search Radius (meters):</label>
+        <input type="number" id="radius" value="5000" min="1000" max="25000" step="1000" class="form-control">
+    </div>
+    <div class="form-check">
+        <input type="checkbox" id="filter-open" class="form-check-input">
+        <label for="filter-open" class="form-check-label">Only Show Open Cafés</label>
+    </div>
+
 <button id="locate-btn" class="btn btn-primary">Find Nearby Cafés </button>
+    <!-- Loading Indicator -->
+    <div id="loading">Loading cafés...</div>
+
+    <!-- Error Message -->
 <div id="error-message" class="text-danger"></div>
+
+    <!-- Café Table -->
 <table class="table mt-3" id="cafes-table" style="display:none;">
     <thead>
         <tr>
@@ -42,148 +108,117 @@
     </thead>
     <tbody ></tbody>
 </table>
+    <!-- Pagination Buttons -->
+    <div class="pagination-buttons">
+        <button id="prev-page" class="btn btn-secondary" disabled>Previous</button>
+        <span id="page-info">Page 1</span>
+        <button id="next-page" class="btn btn-secondary" disabled>Next</button>
+    </div>
 
-<!-- Websocket -->
-<script>
-    let webSocket;
-    let reconnectAttempts = 0;
+    <!-- Map Container -->
+    <div id="map" style="width: 100%; height: 400px;"></div>
+    <!-- Load Leaflet.js & MarkerCluster -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
-    function connectWebSocket() {
-        webSocket = new WebSocket("wss://localhost:7053/CafeLocatorApp");
+    <!-- JavaScript Code -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            let locateBtn = document.getElementById("locate-btn");
+            let map = L.map('map', {
+                center: [0, 0], // Default center
+                zoom: 2, // Default zoom
+                maxZoom: 18 // ✅ Ensure maxZoom is set
+            });
+            let markers = L.markerClusterGroup(); // Cluster group
+            map.addLayer(markers);
 
-        webSocket.onopen = function () {
-            console.log("WebSocket connection established.");
-            reconnectAttempts = 0; // Reset attempts on successful connection
-            webSocket.send("Hello from client!");
-        };
+            // Load OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 18 // ✅ Set max zoom level to 18
+            }).addTo(map);
 
-        webSocket.onmessage = function (event) {
-            console.log("Received from server:", event.data);
-        };
+            let currentPage = 1;
+            let pageSize = 10;
 
-        webSocket.onclose = function () {
-            let delay = Math.min(3000 * (2 ** reconnectAttempts), 30000); // Exponential backoff (max 30s)
-            console.log(`WebSocket closed. Reconnecting in ${delay / 1000} seconds...`);
-            setTimeout(connectWebSocket, delay);
-            reconnectAttempts++;
-        };
+            function fetchCafes(latitude, longitude, page = 1) {
+                let radius = document.getElementById("radius").value || 5000; // Default 5 km
+                let onlyOpen = document.getElementById("filter-open")?.checked || false; // ✅ Ensure 'onlyOpen' is defined
 
-        webSocket.onerror = function (error) {
-            console.error("WebSocket error:", error);
-        };
-    }
+                document.getElementById("loading").style.display = "block"; // Show loading spinner
 
-    document.addEventListener("DOMContentLoaded", connectWebSocket);
+                fetch(`/api/Home/GetCafes?latitude=${latitude}&longitude=${longitude}&radius=${radius}&onlyOpen=${onlyOpen}&page=${page}&pageSize=${pageSize}`)
 
-</script>
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        document.getElementById("loading").style.display = "none"; // Hide loading spinner
+                        let table = document.getElementById("cafes-table");
+                        let tbody = table.querySelector("tbody");
+                        tbody.innerHTML = "";
+                        table.style.display = "table";
 
-<!-- OpenStreetMap Container -->
-<div id="map" style="width: 100%; height: 400px;"></div>
+                        map.setView([latitude, longitude], 15); // Move map to user location
+                        markers.clearLayers(); // ✅ Clear previous markers before adding new ones
 
-<!-- Load Leaflet.js FIRST -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+                        data.forEach((cafe, index) => {
+                            // Add row to table
+                            let row = document.createElement("tr");
+                            row.innerHTML = `
+                                <td><a href="#" class="cafe-name" data-index="${index}" style="cursor: pointer; text-decoration: underline;">${cafe.name}</a></td>
+                                <td>${cafe.address}</td>
+                            `;
+                            tbody.appendChild(row);
 
+                            // Create a marker for each café
+                            let marker = L.marker([cafe.latitude, cafe.longitude])
+                                .bindPopup(`<b>${cafe.name}</b><br>${cafe.address}`);
 
-<!-- Load MarkerCluster AFTER Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+                            markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
 
-
-
-<label for="radius">Search Radius (meters):</label>
-<input type="number" id="radius" value="5000" min="1000" max="25000" step="1000" class="form-control">
-<div id="loading" style="display: none;">
-    <p>Loading cafes...</p>
-</div>
-
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        let locateBtn = document.getElementById("locate-btn");
-        let map = L.map('map', {
-            center: [0, 0], // Default center
-            zoom: 2, // Default zoom
-            maxZoom: 18 // ✅ Ensure maxZoom is set
-        });
-        let markers = L.markerClusterGroup(); // Cluster group
-        map.addLayer(markers);
-
-        // Load OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-            maxZoom: 18 // ✅ Set max zoom level to 18
-        }).addTo(map);
-
-        function fetchCafes(latitude, longitude) {
-            let radius = document.getElementById("radius").value || 5000; // Default 5 km
-            let onlyOpen = document.getElementById("filter-open")?.checked || false; // ✅ Ensure 'onlyOpen' is defined
-
-            document.getElementById("loading").style.display = "block"; // Show loading spinner
-
-            fetch(`/api/Home/GetCafes?latitude=${latitude}&longitude=${longitude}&radius=${radius}&onlyOpen=${onlyOpen}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    document.getElementById("loading").style.display = "none"; // Hide loading spinner
-
-                    let table = document.getElementById("cafes-table");
-                    let tbody = table.querySelector("tbody");
-                    tbody.innerHTML = "";
-                    table.style.display = "table";
-
-                    map.setView([latitude, longitude], 15); // Move map to user location
-
-                    markers.clearLayers(); // ✅ Clear previous markers before adding new ones
-
-                    data.forEach((cafe, index) => {
-                        // Add row to table
-                        let row = document.createElement("tr");
-                        row.innerHTML = `
-                        <td><a href="#" class="cafe-name" data-index="${index}" style="cursor: pointer; text-decoration: underline;">${cafe.name}</a></td>
-                        <td>${cafe.address}</td>
-                    `;
-                        tbody.appendChild(row);
-
-                        // Create a marker for each café
-                        let marker = L.marker([cafe.latitude, cafe.longitude])
-                            .bindPopup(`<b>${cafe.name}</b><br>${cafe.address}`);
-
-                        markers.addLayer(marker); // ✅ Add to the cluster group (Fixes duplicate markers)
-
-                        // Add event listener to pan to café on table row click
-                        row.querySelector(".cafe-name").addEventListener("click", function (event) {
-                            event.preventDefault(); // Prevent default link behavior
-                            map.setView(marker.getLatLng(), 16);
-                            marker.openPopup();
+                            // Add event listener to pan to café on table row click
+                            row.querySelector(".cafe-name").addEventListener("click", function (event) {
+                                event.preventDefault(); // Prevent default link behavior
+                                map.setView(marker.getLatLng(), 16);
+                                marker.openPopup();
+                            });
                         });
-                    });
+                        document.getElementById("page-info").innerText = `Page ${page}`;
+                        currentPage = page;
 
-                    map.addLayer(markers); // ✅ Ensure cluster group is added to the map
-                    console.log(`Cafés Found: ${data.length}`);
-                })
-                .catch(error => {
-                    document.getElementById("error-message").innerText = "Error fetching cafés. Try again later.";
-                    console.error("Error fetching cafés:", error);
-                    document.getElementById("loading").style.display = "none"; // Hide on error
-                });
-        }
-               
-        locateBtn.addEventListener("click", function () {
-            if (navigator.geolocation) {
+                        document.getElementById("prev-page").disabled = page === 1;
+                        document.getElementById("next-page").disabled = data.length < pageSize;
+
+                        map.addLayer(markers);
+                        console.log(`Cafés Found (Page ${page}): ${data.length}`);
+                    })
+                    .catch(error => {
+                        document.getElementById("error-message").innerText = "Error fetching cafés. Try again later.";
+                        console.error("Error fetching cafés:", error);
+                        document.getElementById("loading").style.display = "none"; // Hide on error
+                    });
+            }
+            document.getElementById("locate-btn").addEventListener("click", function () {
                 navigator.geolocation.getCurrentPosition(position => {
-                    fetchCafes(position.coords.latitude, position.coords.longitude);
+                    currentPage = 1; // ✅ Reset page number
+                    fetchCafes(position.coords.latitude, position.coords.longitude, currentPage);
                 }, error => {
-                    document.getElementById("error-message").innerText = "Location access denied. Enter manually.";
                     console.error("Geolocation error:", error);
                 });
-            } else {
-                document.getElementById("error-message").innerText = "Geolocation is not supported by this browser.";
-            }
+            });
+
+            document.getElementById("prev-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage - 1));
+            document.getElementById("next-page").addEventListener("click", () => fetchCafes(map.getCenter().lat, map.getCenter().lng, currentPage + 1));
+
         });
-    });
-</script>
+    </script>
+</body>
+
+
+
+
