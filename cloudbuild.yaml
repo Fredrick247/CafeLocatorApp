@@ -1,0 +1,35 @@
+steps:
+  # 1) Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'build',
+        '-t',
+        'asia-southeast1-docker.pkg.dev/$PROJECT_ID/cafelocator-repo/cafelocator:latest',
+        '.'
+      ]
+
+  # 2) Push image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      [
+        'push',
+        'asia-southeast1-docker.pkg.dev/$PROJECT_ID/cafelocator-repo/cafelocator:latest'
+      ]
+
+  # 3) Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run',
+        'deploy',
+        'cafelocator',
+        '--image=asia-southeast1-docker.pkg.dev/$PROJECT_ID/cafelocator-repo/cafelocator:latest',
+        '--region=asia-southeast1',
+        '--platform=managed',
+        '--allow-unauthenticated'
+      ]
+
+images:
+  - 'asia-southeast1-docker.pkg.dev/$PROJECT_ID/cafelocator-repo/cafelocator:latest'
